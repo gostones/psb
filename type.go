@@ -1,9 +1,17 @@
 package main
 
 import (
+	host "github.com/libp2p/go-libp2p-host"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	p2pnet "github.com/libp2p/go-libp2p-net"
 	"net"
 )
+
+type HostInfo struct {
+	Port int
+	Host host.Host
+	DHT  *dht.IpfsDHT
+}
 
 type PeerAddr struct {
 	id string

@@ -4,11 +4,12 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"github.com/elazarl/goproxy"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/elazarl/goproxy"
 )
 
 func redirectHost(r *http.Request, host, body string) *http.Response {
@@ -39,12 +40,14 @@ func redirectHost(r *http.Request, host, body string) *http.Response {
 
 // StartProxy dispatches request to peers
 func StartProxy(port int, forward string) {
-	ha, err := initHost()
+	hi, err := InitHost()
 	if err != nil {
 		logger.Fatal(err)
 	}
 
-	servePeer(ha, forward)
+	servePeer(hi.Host, forward)
+	myid := hi.Host.ID().Pretty()
+	myaddr := ToPeerAddr(myid)
 
 	//
 	proxy := goproxy.NewProxyHttpServer()
@@ -76,9 +79,12 @@ func StartProxy(port int, forward string) {
 			return nil, fmt.Errorf("Peer invalid: %v", hostport[0])
 		}
 
-		logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v\n", network, addr, pid)
+		logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v my: %v", network, addr, pid, myid)
 
-		return dialPeer(ha, pid)
+		if pid == myid {
+			return net.Dial(network, forward)
+		}
+		return dialPeer(hi.Host, pid)
 
 		// 	// target := nb.GetPeerTarget(id)
 		// 	// if target == "" {
@@ -119,7 +125,7 @@ func StartProxy(port int, forward string) {
 	proxy.Tr.Proxy = nil
 
 	// proxyURL := fmt.Sprintf("http://127.0.0.1:%v", port)
-	proxy.NonproxyHandler = MuxHandlerFunc(ha, port)
+	proxy.NonproxyHandler = MuxHandlerFunc(hi, port)
 
 	//
 	proxy.Verbose = true
@@ -132,6 +138,15 @@ func StartProxy(port int, forward string) {
 	// 	//return user == json[0]
 	// 	return true
 	// })
+
+	// ping
+	ping := fmt.Sprintf("_ping_.%v.m3", myaddr)
+	proxy.OnRequest(goproxy.DstHostIs(ping)).DoFunc(
+		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+			pong := fmt.Sprintf("%v %v %v", myid, myaddr, CurrentTime())
+			return r, goproxy.NewResponse(r,
+				goproxy.ContentTypeText, http.StatusOK, pong)
+		})
 
 	proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {

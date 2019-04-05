@@ -95,22 +95,27 @@ func PACHandlerFunc(port int) http.HandlerFunc {
 }
 
 type PeerInfo struct {
-	ID string `json:"id"`
+	ID    string   `json:"id"`
+	Multi []string `json:"multi"`
+	Peer  []string `json:"peer"`
 }
 
-// FingerHandlerFunc shows peer information
-func FingerHandlerFunc(h host.Host) http.HandlerFunc {
+// PeerHandlerFunc shows peer information
+func PeerHandlerFunc(hi *HostInfo) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h := hi.Host
 		hostAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ipfs/%s", h.ID().Pretty()))
-		addrs := h.Addrs()
-
-		for _, addr := range addrs {
-			a := addr.Encapsulate(hostAddr)
-			logger.Println(a)
+		multi := []string{}
+		for _, addr := range h.Addrs() {
+			multi = append(multi, addr.Encapsulate(hostAddr).String())
 		}
+		// list := discoverPeer(hi.Host, hi.DHT)
 		m := &PeerInfo{
-			ID: h.ID().Pretty(),
+			ID:    h.ID().Pretty(),
+			Multi: multi,
+			// Peer:  list,
 		}
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		b, _ := json.Marshal(m)
@@ -119,11 +124,11 @@ func FingerHandlerFunc(h host.Host) http.HandlerFunc {
 }
 
 // MuxHandlerFunc multiplexes requests
-func MuxHandlerFunc(host host.Host, port int) http.HandlerFunc {
+func MuxHandlerFunc(hi *HostInfo, port int) http.HandlerFunc {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/proxy.pac", PACHandlerFunc(port))
-	mux.HandleFunc("/health", HealthHandlerFunc(host))
-	mux.HandleFunc("/finger", FingerHandlerFunc(host))
+	mux.HandleFunc("/health", HealthHandlerFunc(hi.Host))
+	mux.HandleFunc("/peer", PeerHandlerFunc(hi))
 
 	fs := http.FileServer(http.Dir("public"))
 	mux.Handle("/", fs)
