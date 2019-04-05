@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"sync"
 
@@ -43,16 +42,16 @@ type IdOutput struct {
 func getLocalPeerInfo() []pstore.PeerInfo {
 	resp, err := http.Get(LOCAL_PEER_ENDPOINT)
 	if err != nil {
-		log.Fatalln(err)
+		logger.Fatalln(err)
 	}
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Fatalln(err)
+		logger.Fatalln(err)
 	}
 	var js IdOutput
 	err = json.Unmarshal(body, &js)
 	if err != nil {
-		log.Fatalln(err)
+		logger.Fatalln(err)
 	}
 	for _, addr := range js.Addresses {
 		// For some reason, possibly NAT traversal, we need to grab the loopback ip address
@@ -60,7 +59,7 @@ func getLocalPeerInfo() []pstore.PeerInfo {
 			return convertPeers([]string{addr})
 		}
 	}
-	log.Fatalln(err)
+	logger.Fatalln(err)
 	return make([]pstore.PeerInfo, 1) // not reachable, but keeps the compiler happy
 }
 
@@ -70,7 +69,7 @@ func convertPeers(peers []string) []pstore.PeerInfo {
 		maddr := ma.StringCast(peer)
 		p, err := pstore.InfoFromP2pAddr(maddr)
 		if err != nil {
-			log.Fatalln(err)
+			logger.Fatalln(err)
 		}
 		pinfos[i] = *p
 	}
@@ -95,18 +94,18 @@ func bootstrapConnect(ctx context.Context, ph host.Host, peers []pstore.PeerInfo
 		wg.Add(1)
 		go func(p pstore.PeerInfo) {
 			defer wg.Done()
-			defer log.Println(ctx, "bootstrapDial", ph.ID(), p.ID)
-			log.Printf("%s bootstrapping to %s", ph.ID(), p.ID)
+			defer logger.Println(ctx, "bootstrapDial", ph.ID(), p.ID)
+			logger.Printf("%s bootstrapping to %s", ph.ID(), p.ID)
 
 			ph.Peerstore().AddAddrs(p.ID, p.Addrs, pstore.PermanentAddrTTL)
 			if err := ph.Connect(ctx, p); err != nil {
-				log.Println(ctx, "bootstrapDialFailed", p.ID)
-				log.Printf("failed to bootstrap with %v: %s", p.ID, err)
+				logger.Println(ctx, "bootstrapDialFailed", p.ID)
+				logger.Printf("failed to bootstrap with %v: %s", p.ID, err)
 				errs <- err
 				return
 			}
-			log.Println(ctx, "bootstrapDialSuccess", p.ID)
-			log.Printf("bootstrapped with %v", p.ID)
+			logger.Println(ctx, "bootstrapDialSuccess", p.ID)
+			logger.Printf("bootstrapped with %v", p.ID)
 		}(p)
 	}
 	wg.Wait()

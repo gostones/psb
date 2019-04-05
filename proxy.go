@@ -37,14 +37,14 @@ func redirectHost(r *http.Request, host, body string) *http.Response {
 // 	r.Header.Set("Access-Control-Allow-Headers", "*")
 // }
 
-// StartProxy dispatches request based on network addr
-func StartProxy(port int, local string) {
+// StartProxy dispatches request to peers
+func StartProxy(port int, forward string) {
 	ha, err := initHost()
 	if err != nil {
 		logger.Fatal(err)
 	}
 
-	servePeer(ha, local)
+	servePeer(ha, forward)
 
 	//
 	proxy := goproxy.NewProxyHttpServer()
@@ -69,15 +69,17 @@ func StartProxy(port int, local string) {
 
 		// if be[0].Hostname == "peer" {
 		// 	// logger.Debugf("@@@ Dial peer network: %v addr: %v\n", network, addr)
+
 		tld := PeerTLD(hostport[0])
 		pid := ToPeerID(tld)
 		if pid == "" {
 			return nil, fmt.Errorf("Peer invalid: %v", hostport[0])
 		}
+
 		logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v\n", network, addr, pid)
 
 		return dialPeer(ha, pid)
-		
+
 		// 	// target := nb.GetPeerTarget(id)
 		// 	// if target == "" {
 		// 	// 	return nil, fmt.Errorf("Peer not reachable: %v", hostport[0])
@@ -85,8 +87,6 @@ func StartProxy(port int, local string) {
 
 		// logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v\n", network, addr, pid)
 		// dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", target))
-
-		
 
 		// 	// if dial != nil {
 		// 	// 	return dial(network, addr)
@@ -117,7 +117,9 @@ func StartProxy(port int, local string) {
 	proxy.Tr.Dial = dial
 	proxy.Tr.DialTLS = nil
 	proxy.Tr.Proxy = nil
-	proxy.NonproxyHandler = MuxHandlerFunc(fmt.Sprintf("http://127.0.0.1:%v", port))
+
+	// proxyURL := fmt.Sprintf("http://127.0.0.1:%v", port)
+	proxy.NonproxyHandler = MuxHandlerFunc(ha, port)
 
 	//
 	proxy.Verbose = true

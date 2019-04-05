@@ -1,12 +1,12 @@
 package main
 
 import (
-	"net"
 	p2pnet "github.com/libp2p/go-libp2p-net"
+	"net"
 )
 
 type PeerAddr struct {
-	id string 
+	id string
 }
 
 func (r PeerAddr) Network() string {

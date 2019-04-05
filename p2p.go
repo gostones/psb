@@ -1,16 +1,12 @@
 package main
 
 import (
-	// "bufio"
 	"context"
 	"crypto/rand"
-	// "flag"
 	"fmt"
 	"io"
-	// "io/ioutil"
-	"net"
-	"log"
 	mrand "math/rand"
+	"net"
 
 	ds "github.com/ipfs/go-datastore"
 	dsync "github.com/ipfs/go-datastore/sync"
@@ -95,13 +91,13 @@ func makeRoutedHost(listenPort int, randseed int64, bootstrapPeers []pstore.Peer
 	// by encapsulating both addresses:
 	// addr := routedHost.Addrs()[0]
 	addrs := routedHost.Addrs()
-	log.Println("I can be reached at:")
+	logger.Println("I can be reached at:")
 	for _, addr := range addrs {
-		log.Println(addr.Encapsulate(hostAddr))
+		logger.Println(addr.Encapsulate(hostAddr))
 	}
 
 	// log.Printf("Now run \"./routed-echo -l %d -d %s%s\" on a different terminal\n", listenPort+1, routedHost.ID().Pretty(), globalFlag)
-	log.Printf("Initialized. port: %d id: %s", listenPort, routedHost.ID().Pretty())
+	logger.Printf("Initialized. port: %d id: %s", listenPort, routedHost.ID().Pretty())
 
 	return routedHost, nil
 }
@@ -132,11 +128,11 @@ func initHost() (host.Host, error) {
 	var bootstrapPeers []pstore.PeerInfo
 	// var globalFlag string
 	if global {
-		log.Println("using global bootstrap")
+		logger.Println("using global bootstrap")
 		bootstrapPeers = IPFS_PEERS
 		// globalFlag = " -global"
 	} else {
-		log.Println("using local bootstrap")
+		logger.Println("using local bootstrap")
 		bootstrapPeers = getLocalPeerInfo()
 		// globalFlag = ""
 	}
@@ -152,14 +148,14 @@ func servePeer(ha host.Host, target string) {
 	// Set a stream handler on host A. with
 	// protocol name.
 	handler := func(s p2pnet.Stream) {
-		log.Println("Got a new stream: %v", s.Conn().RemotePeer())
+		logger.Printf("Got a new stream: %v", s.Conn().RemotePeer())
 		client, err := net.Dial("tcp", target)
 		if err != nil {
-			log.Printf("failed to dial: %v", err)
+			logger.Printf("failed to dial: %v", err)
 			return
 		}
 
-		log.Printf("connected: %v -> %v", s, target)
+		logger.Printf("connected: %v -> %v", s, target)
 		go func() {
 			defer client.Close()
 			defer s.Close()
@@ -229,13 +225,13 @@ func dialPeer(ha host.Host, target string) (net.Conn, error) {
 //         defer conn.Close()
 //         io.Copy(s, conn)
 // 	}()
-	
+
 //     go func() {
 //         defer s.Close()
 //         defer conn.Close()
 //         io.Copy(conn, s)
 //     }()
-	
+
 // 	return nil
 
 // 	// _, err = s.Write([]byte("Hello, world!\n"))

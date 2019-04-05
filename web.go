@@ -3,21 +3,26 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/gostones/lib"
-	"github.com/parnurzeal/gorequest"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/gostones/lib"
+	host "github.com/libp2p/go-libp2p-host"
+	ma "github.com/multiformats/go-multiaddr"
+	"github.com/parnurzeal/gorequest"
 )
 
 type Health struct {
-	Healthy   bool  `json:"healthy"`
-	Timestamp int64 `json:"timestamp"`
+	ID        string `json:"id"`
+	Addr      string `json:"addr"`
+	Healthy   bool   `json:"healthy"`
+	Timestamp int64  `json:"timestamp"`
 }
 
-func HealthHandlerFunc(proxyURL string) http.HandlerFunc {
+func HealthHandlerFunc(h host.Host) http.HandlerFunc {
 	const elapse int64 = 60000 //one min
 	last := ToTimestamp(time.Now())
 	healthy := false
@@ -28,10 +33,13 @@ func HealthHandlerFunc(proxyURL string) http.HandlerFunc {
 
 		now := ToTimestamp(time.Now())
 		if !healthy || now-last > elapse {
-			healthy = pingProxy(proxyURL)
+			healthy = true //TODO pingProxy(proxyURL)
 			last = now
 		}
+		pid := h.ID().Pretty()
 		m := &Health{
+			ID:        pid,
+			Addr:      ToPeerAddr(pid),
 			Healthy:   healthy,
 			Timestamp: now,
 		}
@@ -76,7 +84,8 @@ function FindProxyForURL(url, host) {
 `
 
 // PACHandlerFunc handles PAC file request
-func PACHandlerFunc(proxyURL string) http.HandlerFunc {
+func PACHandlerFunc(port int) http.HandlerFunc {
+	proxyURL := fmt.Sprintf("http://127.0.0.1:%v", port)
 	URL, _ := url.Parse(proxyURL)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ns-proxy-autoconfig")
@@ -85,11 +94,37 @@ func PACHandlerFunc(proxyURL string) http.HandlerFunc {
 	})
 }
 
+type PeerInfo struct {
+	ID string `json:"id"`
+}
+
+// FingerHandlerFunc shows peer information
+func FingerHandlerFunc(h host.Host) http.HandlerFunc {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		hostAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ipfs/%s", h.ID().Pretty()))
+		addrs := h.Addrs()
+
+		for _, addr := range addrs {
+			a := addr.Encapsulate(hostAddr)
+			logger.Println(a)
+		}
+		m := &PeerInfo{
+			ID: h.ID().Pretty(),
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		b, _ := json.Marshal(m)
+		fmt.Fprintf(w, string(b))
+	})
+}
+
 // MuxHandlerFunc multiplexes requests
-func MuxHandlerFunc(proxyURL string) http.HandlerFunc {
+func MuxHandlerFunc(host host.Host, port int) http.HandlerFunc {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/proxy.pac", PACHandlerFunc(proxyURL))
-	mux.HandleFunc("/health", HealthHandlerFunc(proxyURL))
+	mux.HandleFunc("/proxy.pac", PACHandlerFunc(port))
+	mux.HandleFunc("/health", HealthHandlerFunc(host))
+	mux.HandleFunc("/finger", FingerHandlerFunc(host))
+
 	fs := http.FileServer(http.Dir("public"))
 	mux.Handle("/", fs)
 

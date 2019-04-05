@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"log"
 )
 
 func main() {
@@ -12,15 +11,19 @@ func main() {
 	// golog.SetAllLoggers(gologging.INFO) // Change to DEBUG for extra info
 
 	// Parse options from the command line
-	listenF := flag.Int("l", 0, "wait for incoming connections")
-	target := flag.String("d", "", "target peer to dial")
-	seed := flag.Int64("seed", 0, "set random seed for id generation")
-	global := flag.Bool("global", false, "use global ipfs peers for bootstrapping")
+	port := flag.Int("port", 8080, "port listening for incoming connections")
+	forward := flag.String("forward", "localhost:80", "service host:port to forward to")
+
+	// target := flag.String("d", "", "target peer to dial")
+	// seed := flag.Int64("seed", 0, "set random seed for id generation")
+	// global := flag.Bool("global", false, "use global ipfs peers for bootstrapping")
 	flag.Parse()
 
-	if *listenF == 0 {
-		log.Fatal("Please provide a port to bind on with -l")
-	}
+	StartProxy(*port, *forward)
+
+	// if *listenF == 0 {
+	// 	logger.Fatal("Please provide a port to bind on with -l")
+	// }
 
 	// // Make a host that listens on the given multiaddress
 	// var bootstrapPeers []pstore.PeerInfo
