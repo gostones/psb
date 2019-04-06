@@ -96,16 +96,22 @@ func InitHost() (*HostInfo, error) {
 	bootstrapPeer(ctx, routedHost)
 
 	// //
-	logger.Info("Announcing ourselves...")
-	disco := discovery.NewRoutingDiscovery(kdht)
-	discovery.Advertise(ctx, disco, Rendezvous)
-	logger.Debug("Successfully announced!")
+	// logger.Info("Announcing ourselves...")
+	// disco := discovery.NewRoutingDiscovery(kdht)
+	// discovery.Advertise(ctx, disco, Rendezvous)
+	// logger.Debug("Successfully announced!")
 
 	//
 	Every(15).Seconds().Run(func() {
 		logger.Debug("discovering peer ....")
 
-		discover(ctx, routedHost, disco)
+		discover(ctx, routedHost, kdht)
+	})
+
+	Every(60).Seconds().Run(func() {
+		logger.Debug("mdns discovering peer ....")
+
+		discoverLocal(ctx, routedHost)
 	})
 
 	// Build host multiaddress
@@ -313,19 +319,27 @@ func bootstrapPeer(ctx context.Context, ha host.Host) {
 
 func discoverPeer(ha host.Host, kdht *dht.IpfsDHT) []string {
 	ctx := context.Background()
-	disco := discovery.NewRoutingDiscovery(kdht)
+	// disco := discovery.NewRoutingDiscovery(kdht)
+	//disco *discovery.RoutingDiscovery
 
-	return discover(ctx, ha, disco)
+	return discover(ctx, ha, kdht)
 }
 
-func discover(ctx context.Context, ha host.Host, disco *discovery.RoutingDiscovery) []string {
+func discover(ctx context.Context, ha host.Host, kdht *dht.IpfsDHT) []string {
+	logger.Info("Announcing ourselves...")
+
+	disco := discovery.NewRoutingDiscovery(kdht)
+	discovery.Advertise(ctx, disco, Rendezvous)
+
+	logger.Debug("Successfully announced!")
 
 	// discovery.Advertise(ctx, disco, Rendezvous)
 	// logger.Debug("Successfully announced!")
 
 	// Now, look for others who have announced
 	// This is like your friend telling you the location to meet you.
-	logger.Debug("Searching for peers...")
+	logger.Debug("searching for peers ...")
+
 	pl := []string{}
 
 	peerChan, err := disco.FindPeers(ctx, Rendezvous)
