@@ -84,7 +84,11 @@ func StartProxy(port int, forward string) {
 		logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v my: %v", network, addr, pid, myid)
 
 		if pid == myid {
-			return net.Dial(network, forward)
+			//return net.Dial(network, forward)
+			dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", forward))
+			if dial != nil {
+				return dial(network, addr)
+			}
 		}
 		return dialPeer(hi.Host, pid)
 

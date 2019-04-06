@@ -17,7 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p-discovery"
 	host "github.com/libp2p/go-libp2p-host"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
-	p2pnet "github.com/libp2p/go-libp2p-net"
+	pnet "github.com/libp2p/go-libp2p-net"
 	peer "github.com/libp2p/go-libp2p-peer"
 	pstore "github.com/libp2p/go-libp2p-peerstore"
 	rhost "github.com/libp2p/go-libp2p/p2p/host/routed"
@@ -93,7 +93,7 @@ func InitHost() (*HostInfo, error) {
 	}
 
 	//
-	bootstrapPeer(routedHost, ctx)
+	bootstrapPeer(ctx, routedHost)
 
 	// //
 	logger.Info("Announcing ourselves...")
@@ -105,7 +105,7 @@ func InitHost() (*HostInfo, error) {
 	Every(15).Seconds().Run(func() {
 		logger.Debug("discovering peer ....")
 
-		discover(routedHost, ctx, disco)
+		discover(ctx, routedHost, disco)
 	})
 
 	// Build host multiaddress
@@ -119,6 +119,8 @@ func InitHost() (*HostInfo, error) {
 	for _, addr := range addrs {
 		logger.Println(addr.Encapsulate(hostAddr))
 	}
+
+	// routedHost.Peerstore().AddAddrs(routedHost.ID(), routedHost.Addrs(), pstore.PermanentAddrTTL)
 
 	// log.Printf("Now run \"./routed-echo -l %d -d %s%s\" on a different terminal\n", listenPort+1, routedHost.ID().Pretty(), globalFlag)
 	logger.Printf("Initialized. port: %d id: %s", port, routedHost.ID().Pretty())
@@ -170,7 +172,7 @@ func InitHost() (*HostInfo, error) {
 func servePeer(ha host.Host, target string) {
 	// Set a stream handler on host A. with
 	// protocol name.
-	handler := func(s p2pnet.Stream) {
+	handler := func(s pnet.Stream) {
 		logger.Printf("Got new request: %v", s.Conn().RemotePeer().Pretty())
 
 		client, err := net.Dial("tcp", target)
@@ -287,7 +289,7 @@ func dialPeer(ha host.Host, target string) (net.Conn, error) {
 // 	return err
 // }
 
-func bootstrapPeer(ha host.Host, ctx context.Context) {
+func bootstrapPeer(ctx context.Context, ha host.Host) {
 	//ctx := context.Background()
 
 	var wg sync.WaitGroup
@@ -313,10 +315,10 @@ func discoverPeer(ha host.Host, kdht *dht.IpfsDHT) []string {
 	ctx := context.Background()
 	disco := discovery.NewRoutingDiscovery(kdht)
 
-	return discover(ha, ctx, disco)
+	return discover(ctx, ha, disco)
 }
 
-func discover(ha host.Host, ctx context.Context, disco *discovery.RoutingDiscovery) []string {
+func discover(ctx context.Context, ha host.Host, disco *discovery.RoutingDiscovery) []string {
 
 	// discovery.Advertise(ctx, disco, Rendezvous)
 	// logger.Debug("Successfully announced!")
