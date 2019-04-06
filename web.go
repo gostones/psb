@@ -109,11 +109,15 @@ func PeerHandlerFunc(hi *HostInfo) http.HandlerFunc {
 		for _, addr := range h.Addrs() {
 			multi = append(multi, addr.Encapsulate(hostAddr).String())
 		}
-		// list := discoverPeer(hi.Host, hi.DHT)
+		pl := []string{}
+		for _, id := range h.Peerstore().Peers() {
+			pl = append(pl, id.Pretty())
+		}
+
 		m := &PeerInfo{
 			ID:    h.ID().Pretty(),
 			Multi: multi,
-			// Peer:  list,
+			Peer:  pl,
 		}
 
 		w.Header().Set("Content-Type", "application/json")

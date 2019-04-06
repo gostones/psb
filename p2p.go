@@ -33,7 +33,7 @@ const Rendezvous = "dahenitozu"
 // given multiaddress. It will use secio if secio is true. It will bootstrap using the
 // provided PeerInfo
 func InitHost() (*HostInfo, error) {
-	golog.SetAllLoggers(gologging.INFO) // Change to DEBUG for extra info
+	golog.SetAllLoggers(gologging.ERROR) // Change to DEBUG for extra info
 	port := FreePort()
 
 	const randseed = 0
@@ -80,12 +80,11 @@ func InitHost() (*HostInfo, error) {
 	// Make the routed host
 	routedHost := rhost.Wrap(basicHost, kdht)
 
-	// connect to the chosen ipfs nodes
-
-	err = bootstrapConnect(ctx, routedHost, IPFS_PEERS)
-	if err != nil {
-		return nil, err
-	}
+	// // connect to the chosen ipfs nodes
+	// err = bootstrapConnect(ctx, routedHost, IPFS_PEERS)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
 	// Bootstrap the host
 	err = kdht.Bootstrap(ctx)
@@ -94,13 +93,20 @@ func InitHost() (*HostInfo, error) {
 	}
 
 	//
-	// bootstrapPeer(routedHost)
+	bootstrapPeer(routedHost, ctx)
 
 	// //
-	// logger.Info("Announcing ourselves...")
-	// routingDiscovery := discovery.NewRoutingDiscovery(kdht)
-	// discovery.Advertise(ctx, routingDiscovery, Rendezvous)
-	// logger.Debug("Successfully announced!")
+	logger.Info("Announcing ourselves...")
+	disco := discovery.NewRoutingDiscovery(kdht)
+	discovery.Advertise(ctx, disco, Rendezvous)
+	logger.Debug("Successfully announced!")
+
+	//
+	Every(15).Seconds().Run(func() {
+		logger.Debug("discovering peer ....")
+
+		discover(routedHost, ctx, disco)
+	})
 
 	// Build host multiaddress
 	hostAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ipfs/%s", routedHost.ID().Pretty()))
@@ -180,17 +186,12 @@ func servePeer(ha host.Host, target string) {
 			defer s.Close()
 			io.Copy(client, s)
 		}()
+
 		go func() {
 			defer client.Close()
 			defer s.Close()
 			io.Copy(s, client)
 		}()
-		// if err := doEcho(s); err != nil {
-		// 	log.Println(err)
-		// 	s.Reset()
-		// } else {
-		// 	s.Close()
-		// }
 	}
 
 	ha.SetStreamHandler(Protocol, handler)
@@ -204,12 +205,12 @@ func servePeer(ha host.Host, target string) {
 
 func dialPeer(ha host.Host, target string) (net.Conn, error) {
 	peerid, err := peer.IDB58Decode(target)
-	logger.Warnf("dialing %v ...", peerid.Pretty())
 
 	if err != nil {
-		logger.Debugf("failed to dial %v", peerid.Pretty())
+		logger.Debugf("failed to decode %v", target)
 		return nil, err
 	}
+	logger.Infof("dialing %v ...", peerid.Pretty())
 
 	// peerinfo := pstore.PeerInfo{ID: peerid}
 	// log.Println("opening stream")
@@ -286,8 +287,8 @@ func dialPeer(ha host.Host, target string) (net.Conn, error) {
 // 	return err
 // }
 
-func bootstrapPeer(ha host.Host) {
-	ctx := context.Background()
+func bootstrapPeer(ha host.Host, ctx context.Context) {
+	//ctx := context.Background()
 
 	var wg sync.WaitGroup
 	for _, peerAddr := range dht.DefaultBootstrapPeers {
@@ -310,8 +311,13 @@ func bootstrapPeer(ha host.Host) {
 
 func discoverPeer(ha host.Host, kdht *dht.IpfsDHT) []string {
 	ctx := context.Background()
-
 	disco := discovery.NewRoutingDiscovery(kdht)
+
+	return discover(ha, ctx, disco)
+}
+
+func discover(ha host.Host, ctx context.Context, disco *discovery.RoutingDiscovery) []string {
+
 	// discovery.Advertise(ctx, disco, Rendezvous)
 	// logger.Debug("Successfully announced!")
 
@@ -330,7 +336,10 @@ func discoverPeer(ha host.Host, kdht *dht.IpfsDHT) []string {
 		if p.ID == ha.ID() {
 			continue
 		}
-		logger.Debug("Found peer:", p)
+		logger.Debugf("Found peer: %v", p.ID.Pretty())
+
+		ha.Peerstore().AddAddrs(p.ID, p.Addrs, pstore.PermanentAddrTTL)
+
 		pl = append(pl, p.ID.Pretty())
 
 		// logger.Debug("Connecting to:", peer)
@@ -444,3 +453,39 @@ func discoverPeer(ha host.Host, kdht *dht.IpfsDHT) []string {
 // 	// }
 
 // }
+
+// addAddrToPeerstore parses a peer multiaddress and adds
+// it to the given host's peerstore, so it knows how to
+// contact it. It returns the peer ID of the remote peer.
+func addAddrToPeerstore(h host.Host, addr string) peer.ID {
+	// The following code extracts target's the peer ID from the
+	// given multiaddress
+	ipfsaddr, err := ma.NewMultiaddr(addr)
+	if err != nil {
+		logger.Debug(err)
+		return ""
+	}
+	pid, err := ipfsaddr.ValueForProtocol(ma.P_IPFS)
+	if err != nil {
+		logger.Debug(err)
+		return ""
+	}
+
+	peerid, err := peer.IDB58Decode(pid)
+	if err != nil {
+		logger.Debug(err)
+		return ""
+	}
+
+	// Decapsulate the /ipfs/<peerID> part from the target
+	// /ip4/<a.b.c.d>/ipfs/<peer> becomes /ip4/<a.b.c.d>
+	targetPeerAddr, _ := ma.NewMultiaddr(
+		fmt.Sprintf("/ipfs/%s", peer.IDB58Encode(peerid)))
+	targetAddr := ipfsaddr.Decapsulate(targetPeerAddr)
+
+	// We have a peer ID and a targetAddr so we add
+	// it to the peerstore so LibP2P knows how to contact it
+	h.Peerstore().AddAddr(peerid, targetAddr, pstore.PermanentAddrTTL)
+
+	return peerid
+}

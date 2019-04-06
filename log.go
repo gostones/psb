@@ -20,9 +20,9 @@ func init() {
 	logrus.SetLevel(level)
 
 	//
-	const app_name = "psp"
+	const appName = "psp"
 	logger = logrus.WithFields(logrus.Fields{
-		"application_name": app_name,
+		"application_name": appName,
 	})
 
 	//

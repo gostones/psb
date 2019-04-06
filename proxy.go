@@ -73,6 +73,8 @@ func StartProxy(port int, forward string) {
 		// if be[0].Hostname == "peer" {
 		// 	// logger.Debugf("@@@ Dial peer network: %v addr: %v\n", network, addr)
 
+		logger.Debugf("!!!!!!!!!!!!!!!!!!")
+
 		tld := PeerTLD(hostport[0])
 		pid := ToPeerID(tld)
 		if pid == "" {
@@ -150,25 +152,25 @@ func StartProxy(port int, forward string) {
 
 	proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			logger.Debugf("\n\n\n##################\n")
-			logger.Debugf("@@@ OnRequest Proto: %v method: %v url: %v\n", req.Proto, req.Method, req.URL)
-			logger.Debugf("@@@ OnRequest request: %v\n", req)
+			logger.Debugf("##################")
+			logger.Debugf("@@@ OnRequest Proto: %v method: %v url: %v", req.Proto, req.Method, req.URL)
+			logger.Debugf("@@@ OnRequest request: %v", req)
 
 			return req, nil
 		})
 
 	proxy.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		logger.Debugf("\n--------------------\n")
+		logger.Debugf("--------------------")
 		// if r != nil {
 		// 	r.Header.Add("X-Peer-Id", nb.My.ID)
 		// 	cors(r)
 		// 	logger.Debugf("@@@ Proxy OnResponse status: %v length: %v\n", r.StatusCode, r.ContentLength)
 		// }
-		logger.Debugf("@@@ OnResponse response: %v\n", r)
+		logger.Debugf("@@@ OnResponse response: %v", r)
 		return r
 	})
 
-	logger.Debugf("Proxy listening on: %v\n", port)
+	logger.Debugf("Proxy listening on: %v", port)
 	logger.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), proxy))
 }
 
