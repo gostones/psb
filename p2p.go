@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"fmt"
 	"io"
 	mrand "math/rand"
 	"net"
+	"net/http"
+	"net/url"
 	"sync"
 
 	ds "github.com/ipfs/go-datastore"
@@ -236,31 +239,100 @@ func (r PeerDial) Dial(network, addr string) (net.Conn, error) {
 
 	logger.Debugf("dial peer: %v/%v (%v)", network, addr, pid)
 
-	return dialPeer(r.Host, pid)
+	return dialPeer(r.Host, addr, pid)
 }
 
-func dialPeer(ha host.Host, target string) (net.Conn, error) {
-	peerid, err := peer.IDB58Decode(target)
+func dialPeer(ha host.Host, addr, pid string) (net.Conn, error) {
+	peerid, err := peer.IDB58Decode(pid)
 
 	if err != nil {
-		logger.Debugf("failed to decode %v", target)
+		logger.Debugf("failed to decode %v", pid)
 		return nil, err
 	}
 	logger.Infof("dialing %v ...", peerid.Pretty())
 
-	// peerinfo := pstore.PeerInfo{ID: peerid}
-	// log.Println("opening stream")
-	// make a new stream from host B to host A
-	// it should be handled on host A by the handler we set above because
-	// we use the same protocol
+	//
 	s, err := ha.NewStream(context.Background(), peerid, Protocol)
 	if err != nil {
 		logger.Debugf("failed to create stream to %v: %v", peerid.Pretty(), err)
 		return nil, err
 	}
 
-	return PeerConn{s}, nil
+	// 	return PeerConn{s}, nil
+	// }
+
+	// func pDial(network, addr string) (net.Conn, error) {
+	// 	c, err := s.forward.Dial("tcp", s.host)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+
+	// HACK. http.ReadRequest also does this.
+
+	c := PeerConn{s}
+	reqURL, err := url.Parse("http://" + addr)
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	reqURL.Scheme = ""
+
+	req, err := http.NewRequest("CONNECT", reqURL.String(), nil)
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+	req.Close = false
+	// if s.haveAuth {
+	// 	req.SetBasicAuth(s.username, s.password)
+	// }
+	// req.Header.Set("User-Agent", "M3")
+
+	err = req.Write(c)
+	if err != nil {
+		c.Close()
+		return nil, err
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(c), req)
+	if err != nil {
+		// TODO close resp body ?
+		// resp.Body.Close()
+		c.Close()
+		return nil, err
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 {
+		c.Close()
+		err = fmt.Errorf("proxy error, status: %d", resp.StatusCode)
+		return nil, err
+	}
+
+	return c, nil
 }
+
+// func dialPeer(ha host.Host, target string) (net.Conn, error) {
+// 	peerid, err := peer.IDB58Decode(target)
+
+// 	if err != nil {
+// 		logger.Debugf("failed to decode %v", target)
+// 		return nil, err
+// 	}
+// 	logger.Infof("dialing %v ...", peerid.Pretty())
+
+// 	// peerinfo := pstore.PeerInfo{ID: peerid}
+// 	// log.Println("opening stream")
+// 	// make a new stream from host B to host A
+// 	// it should be handled on host A by the handler we set above because
+// 	// we use the same protocol
+// 	s, err := ha.NewStream(context.Background(), peerid, Protocol)
+// 	if err != nil {
+// 		logger.Debugf("failed to create stream to %v: %v", peerid.Pretty(), err)
+// 		return nil, err
+// 	}
+
+// 	return PeerConn{s}, nil
+// }
 
 // func connectPeer(conn net.Conn, ha host.Host, target string) error {
 // 	peerid, err := peer.IDB58Decode(target)
