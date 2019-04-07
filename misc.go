@@ -11,7 +11,7 @@ import (
 	"net"
 	// "os/exec"
 	// "path/filepath"
-	// "regexp"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -104,4 +104,15 @@ func PeerTLD(domain string) string {
 		s = sa[len(sa)-2]
 	}
 	return s
+}
+
+var localHostIpv4RE = regexp.MustCompile(`127\.0\.0\.\d+`)
+
+// IsLocalHost checks whether host is explicitly local host
+// taken from goproxy
+func IsLocalHost(host string) bool {
+	return host == "::1" ||
+		host == "0:0:0:0:0:0:0:1" ||
+		localHostIpv4RE.MatchString(host) ||
+		host == "localhost"
 }

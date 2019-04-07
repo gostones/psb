@@ -22,4 +22,5 @@ require (
 	github.com/parnurzeal/gorequest v0.2.15
 	github.com/sirupsen/logrus v1.4.1
 	github.com/whyrusleeping/go-logging v0.0.0-20170515211332-0457bb6b88fc
+	golang.org/x/net v0.0.0-20190227160552-c95aed5357e7
 )

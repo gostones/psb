@@ -4,12 +4,14 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
-	"net"
-	"net/http"
-	"strings"
-
 	"github.com/elazarl/goproxy"
+	xproxy "golang.org/x/net/proxy"
+	"io/ioutil"
+	// "net"
+	"net/http"
+	// "net/url"
+	"net"
+	"strings"
 )
 
 func redirectHost(r *http.Request, host, body string) *http.Response {
@@ -38,6 +40,14 @@ func redirectHost(r *http.Request, host, body string) *http.Response {
 // 	r.Header.Set("Access-Control-Allow-Headers", "*")
 // }
 
+type AnyDial struct {
+	Dialer func(network, addr string) (net.Conn, error)
+}
+
+func (r AnyDial) Dial(network, addr string) (net.Conn, error) {
+	return r.Dialer(network, addr)
+}
+
 // StartProxy dispatches request to peers
 func StartProxy(port int, forward string) {
 	hi, err := InitHost()
@@ -45,84 +55,140 @@ func StartProxy(port int, forward string) {
 		logger.Fatal(err)
 	}
 
-	servePeer(hi.Host, forward)
+	servePeer(hi.Host, fmt.Sprintf("127.0.0.1:%v", port))
+
 	myid := hi.Host.ID().Pretty()
 	myaddr := ToPeerAddr(myid)
 
 	//
 	proxy := goproxy.NewProxyHttpServer()
+
+	// forwardDial := func(network, addr string) (net.Conn, error) {
+	// 	d := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", forward))
+	// 	return d(network, addr)
+	// }
+
+	// uri, _ := url.Parse(fmt.Sprintf("http://%v", forward))
+	// forwardDial, err := xproxy.FromURL(uri, xproxy.Direct)
+	// if err != nil {
+	// 	logger.Fatal(err)
+	// }
+
+	forwardDial := AnyDial{Dialer: proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", forward))}
+	peerDial := PeerDial{Host: hi.Host}
+
+	perHostDial := xproxy.NewPerHost(peerDial, forwardDial)
+	perHostDial.AddZone(fmt.Sprintf("%v.m3", myaddr))
+
 	dial := func(network, addr string) (net.Conn, error) {
-		hostport := strings.Split(addr, ":")
-
-		// // resolved := hostport[0] //nb.ResolveAddr(hostport[0])
-		// be, viaProxy := route.Match(hostport[0])
-		// if be == nil || len(be) == 0 {
-		// 	return nil, fmt.Errorf("Proxy routing error: %v %v", network, addr)
-		// }
-		// logger.Debugf("Router.Match(%q): %v proxy: %v, network: %v addr: %v", hostport[0], *be[0], viaProxy, network, addr)
-
-		// // prevent loop
-		// if be[0].Hostname == hostport[0] {
-		// 	return net.Dial(network, addr)
-		// }
-
-		// if be[0].Hostname == "direct" {
-		// 	return net.Dial(network, addr)
-		// }
-
-		// if be[0].Hostname == "peer" {
-		// 	// logger.Debugf("@@@ Dial peer network: %v addr: %v\n", network, addr)
+		// hostport := strings.Split(addr, ":")
+		host, _, err := net.SplitHostPort(addr)
+		if err != nil {
+			return nil, err
+		}
 
 		logger.Debugf("!!!!!!!!!!!!!!!!!!")
+		logger.Debugf("@@@ Dial: %v addr: %v", network, addr)
 
-		tld := PeerTLD(hostport[0])
-		pid := ToPeerID(tld)
-		if pid == "" {
-			return nil, fmt.Errorf("Peer invalid: %v", hostport[0])
+		if IsLocalHost(host) {
+			return net.Dial(network, addr)
 		}
 
-		logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v my: %v", network, addr, pid, myid)
+		return perHostDial.Dial(network, addr)
 
-		if pid == myid {
-			//return net.Dial(network, forward)
-			dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", forward))
-			if dial != nil {
-				return dial(network, addr)
-			}
-		}
-		return dialPeer(hi.Host, pid)
-
-		// 	// target := nb.GetPeerTarget(id)
-		// 	// if target == "" {
-		// 	// 	return nil, fmt.Errorf("Peer not reachable: %v", hostport[0])
-		// 	// }
-
-		// logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v\n", network, addr, pid)
-		// dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", target))
-
-		// 	// if dial != nil {
-		// 	// 	return dial(network, addr)
-		// 	// }
-		// 	return nil, fmt.Errorf("Peer proxy error: %v", hostport)
+		// tld := PeerTLD(host)
+		// pid := ToPeerID(tld)
+		// if pid == "" { // not a peer
+		// 	//return nil, fmt.Errorf("Peer invalid: %v", host)
+		// 	return net.Dial(network, addr)
 		// }
 
-		// // pass on port if not provided in backend target
-		// port := fmt.Sprintf("%v", be[0].Port)
-		// if be[0].Port == 0 {
-		// 	port = hostport[1]
-		// }
-		// target := fmt.Sprintf("%v:%v", be[0].Hostname, port)
-		// if viaProxy {
-		// 	dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", target))
+		// logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v my: %v", network, addr, pid, myid)
 
-		// 	if dial != nil {
-		// 		return dial(network, addr)
-		// 	}
-		// 	return nil, fmt.Errorf("Proxy routing error: %v %v", network, addr)
+		// if pid == myid {
+		// 	return forwardDial.Dial(network, addr)
 		// }
 
-		// return net.Dial(network, target)
+		// // return peerDial.Dial(network, addr)
+		// return dialPeer(hi.Host, pid)
 	}
+
+	// dial := func(network, addr string) (net.Conn, error) {
+	// 	hostport := strings.Split(addr, ":")
+
+	// 	// // resolved := hostport[0] //nb.ResolveAddr(hostport[0])
+	// 	// be, viaProxy := route.Match(hostport[0])
+	// 	// if be == nil || len(be) == 0 {
+	// 	// 	return nil, fmt.Errorf("Proxy routing error: %v %v", network, addr)
+	// 	// }
+	// 	// logger.Debugf("Router.Match(%q): %v proxy: %v, network: %v addr: %v", hostport[0], *be[0], viaProxy, network, addr)
+
+	// 	// // prevent loop
+	// 	// if be[0].Hostname == hostport[0] {
+	// 	// 	return net.Dial(network, addr)
+	// 	// }
+
+	// 	// if be[0].Hostname == "direct" {
+	// 	// 	return net.Dial(network, addr)
+	// 	// }
+
+	// 	// if be[0].Hostname == "peer" {
+	// 	// 	// logger.Debugf("@@@ Dial peer network: %v addr: %v\n", network, addr)
+
+	// 	logger.Debugf("!!!!!!!!!!!!!!!!!!")
+
+	// 	tld := PeerTLD(hostport[0])
+	// 	pid := ToPeerID(tld)
+	// 	if pid == "" {
+	// 		return nil, fmt.Errorf("Peer invalid: %v", hostport[0])
+	// 	}
+
+	// 	logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v my: %v", network, addr, pid, myid)
+
+	// 	if pid == myid {
+	// 		//return net.Dial(network, forward)
+	// 		// dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", forward))
+	// 		// if dial != nil {
+	// 		// 	return dial(network, addr)
+	// 		// }
+	// 		return forwardDial(network, addr)
+	// 	}
+
+	// 	return dialPeer(hi.Host, pid)
+	// 	// return peerDial(network, addr)
+
+	// 	/////
+	// 	// 	// target := nb.GetPeerTarget(id)
+	// 	// 	// if target == "" {
+	// 	// 	// 	return nil, fmt.Errorf("Peer not reachable: %v", hostport[0])
+	// 	// 	// }
+
+	// 	// logger.Debugf("@@@ Dial peer network: %v addr: %v pid: %v\n", network, addr, pid)
+	// 	// dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", target))
+
+	// 	// 	// if dial != nil {
+	// 	// 	// 	return dial(network, addr)
+	// 	// 	// }
+	// 	// 	return nil, fmt.Errorf("Peer proxy error: %v", hostport)
+	// 	// }
+
+	// 	// // pass on port if not provided in backend target
+	// 	// port := fmt.Sprintf("%v", be[0].Port)
+	// 	// if be[0].Port == 0 {
+	// 	// 	port = hostport[1]
+	// 	// }
+	// 	// target := fmt.Sprintf("%v:%v", be[0].Hostname, port)
+	// 	// if viaProxy {
+	// 	// 	dial := proxy.NewConnectDialToProxy(fmt.Sprintf("http://%v", target))
+
+	// 	// 	if dial != nil {
+	// 	// 		return dial(network, addr)
+	// 	// 	}
+	// 	// 	return nil, fmt.Errorf("Proxy routing error: %v %v", network, addr)
+	// 	// }
+
+	// 	// return net.Dial(network, target)
+	// }
 
 	//
 	proxy.ConnectDial = nil
@@ -147,24 +213,35 @@ func StartProxy(port int, forward string) {
 
 	// ping
 	ping := fmt.Sprintf("_ping_.%v.m3", myaddr)
-	proxy.OnRequest(goproxy.DstHostIs(ping)).DoFunc(
-		func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			pong := fmt.Sprintf("%v %v %v", myid, myaddr, CurrentTime())
-			return r, goproxy.NewResponse(r,
-				goproxy.ContentTypeText, http.StatusOK, pong)
-		})
+
+	// proxy.OnRequest(goproxy.DstHostIs(ping)).DoFunc(
+	// 	func(r *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
+	// 		pong := fmt.Sprintf("%v %v %v", myid, myaddr, CurrentTime())
+	// 		return r, goproxy.NewResponse(r,
+	// 			goproxy.ContentTypeText, http.StatusOK, pong)
+	// 	})
 
 	proxy.OnRequest().DoFunc(
 		func(req *http.Request, ctx *goproxy.ProxyCtx) (*http.Request, *http.Response) {
-			logger.Debugf("##################")
-			logger.Debugf("@@@ OnRequest Proto: %v method: %v url: %v", req.Proto, req.Method, req.URL)
+			logger.Debugln("##################")
+			// logger.Debugf("@@@ OnRequest Proto: %v method: %v url: %v", req.Proto, req.Method, req.URL)
 			logger.Debugf("@@@ OnRequest request: %v", req)
+			// fmt.Println("##################")
+			// fmt.Printf("-- @@@ OnRequest request: %v", req)
+			hostport := strings.Split(req.URL.Host, ":")
 
+			if ping == hostport[0] {
+				pong := fmt.Sprintf("%v %v %v", myid, myaddr, CurrentTime())
+				return req, goproxy.NewResponse(req,
+					goproxy.ContentTypeText, http.StatusOK, pong)
+			}
 			return req, nil
 		})
 
 	proxy.OnResponse().DoFunc(func(r *http.Response, ctx *goproxy.ProxyCtx) *http.Response {
-		logger.Debugf("--------------------")
+		logger.Debugln("--------------------")
+		// fmt.Println("--------------------")
+
 		// if r != nil {
 		// 	r.Header.Add("X-Peer-Id", nb.My.ID)
 		// 	cors(r)

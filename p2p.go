@@ -34,6 +34,7 @@ const Rendezvous = "dahenitozu"
 // provided PeerInfo
 func InitHost() (*HostInfo, error) {
 	golog.SetAllLoggers(gologging.ERROR) // Change to DEBUG for extra info
+
 	port := FreePort()
 
 	const randseed = 0
@@ -180,6 +181,7 @@ func servePeer(ha host.Host, target string) {
 	// protocol name.
 	handler := func(s pnet.Stream) {
 		logger.Printf("Got new request: %v", s.Conn().RemotePeer().Pretty())
+		// fmt.Printf("Got new request: %v", s.Conn().RemotePeer().Pretty())
 
 		client, err := net.Dial("tcp", target)
 		if err != nil {
@@ -188,6 +190,7 @@ func servePeer(ha host.Host, target string) {
 		}
 
 		logger.Printf("connected: %v -> %v", s, target)
+		// fmt.Printf("connected: %v -> %v", s, target)
 
 		go func() {
 			defer client.Close()
@@ -209,6 +212,31 @@ func servePeer(ha host.Host, target string) {
 	// 	select {} // hang forever
 	// }
 	/**** This is where the listener code ends ****/
+}
+
+// type Dialer interface {
+//     Dial(network, addr string) (c net.Conn, err error)
+// }
+
+type PeerDial struct {
+	Host host.Host
+}
+
+func (r PeerDial) Dial(network, addr string) (net.Conn, error) {
+	// hostport := strings.Split(addr, ":")
+	ho, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return nil, err
+	}
+	tld := PeerTLD(ho)
+	pid := ToPeerID(tld)
+	if pid == "" {
+		return nil, fmt.Errorf("Peer invalid: %v", addr)
+	}
+
+	logger.Debugf("dial peer: %v/%v (%v)", network, addr, pid)
+
+	return dialPeer(r.Host, pid)
 }
 
 func dialPeer(ha host.Host, target string) (net.Conn, error) {
